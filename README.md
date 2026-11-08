@@ -19,23 +19,28 @@ Python packages are needed. Close Claude Code before changing its settings.
 ### macOS and Linux
 
 ```bash
-bash setup-external-api.sh --base-url https://gateway.example.com --model your-model-id
+bash setup-external-api.sh
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-.\setup-external-api.ps1 --base-url https://gateway.example.com --model your-model-id
+.\setup-external-api.ps1
 ```
 
 If PowerShell blocks local scripts, use Python directly:
 
 ```powershell
-py -3 .\setup_external_api.py --base-url https://gateway.example.com --model your-model-id
+py -3 .\setup_external_api.py
 ```
 
+Setup asks for **your provider's base URL**, **your model ID**, and your
+credential (hidden). There is no default OpenCode URL in this flow.
+`ANTHROPIC_BASE_URL` is Claude Code's setting for any compatible provider;
+the name does not restrict it to Anthropic or OpenCode.
+
 All entry points use the same implementation and accept identical options.
-Setup prompts for your credential without displaying it. For unattended use,
+You can also supply `--base-url` and `--model` directly. For unattended use,
 set `EXTERNAL_API_KEY`; command-line `--key` values may be saved in shell
 history or visible in process listings.
 
@@ -81,9 +86,7 @@ bash setup-external-api.sh --base-url YOUR_AGENT_ROUTER_BASE_URL --model YOUR_AG
 ```
 
 Replace both placeholders before running. The endpoint is configurable so you
-can use the address for your deployment. The
-[AgentRouter reference project](https://github.com/Arshazar/agentrouter-api-in-claude-code)
-provided the original setup workflow. Use `--auth api-key` if your deployment
+can use the address for your deployment. Use `--auth api-key` if your deployment
 requires an `x-api-key` header instead of a bearer token.
 
 ### OpenCode
@@ -120,7 +123,7 @@ supports paid or Go models for Claude Code; check your account's access.
 | Option | Behavior |
 | --- | --- |
 | `--provider custom\|console\|go` | Custom endpoint (default), OpenCode Console, or OpenCode Go |
-| `--base-url URL` | API base URL; overrides a preset; custom mode also reads `EXTERNAL_API_BASE_URL` |
+| `--base-url URL` | Your API base URL; overrides a preset; custom mode falls back to `EXTERNAL_API_BASE_URL`, then an interactive prompt |
 | `-k`, `--key KEY` | Credential; otherwise uses `EXTERNAL_API_KEY`, OpenCode-only fallback, then a hidden prompt |
 | `--auth bearer\|api-key` | Bearer token (default) or `x-api-key` |
 | `-m`, `--model ID` | Startup model and default for all three aliases |
@@ -132,7 +135,8 @@ supports paid or Go models for Claude Code; check your account's access.
 | `--restore BACKUP` | Restore the entire settings file from a backup |
 | `-h`, `--help` | Show help |
 
-Custom mode requires `--base-url` (or `EXTERNAL_API_BASE_URL`) and either
+Custom mode prompts for missing URL and model values in an interactive terminal.
+For unattended use, supply `--base-url` (or `EXTERNAL_API_BASE_URL`) and either
 `--model` or all three alias options. It never guesses your provider's model IDs
 or reuses model mappings from the previous provider.
 
@@ -214,7 +218,9 @@ python3 -m unittest discover -s tests -v
 
 Tests use temporary settings files and never change your Claude configuration.
 GitHub Actions runs the suite on macOS, Linux, and Windows with Python 3.9 and
-3.13 and checks the platform launchers. Tests cover custom providers, both
+3.13 and checks the platform launchers. Python 3.13 uses the latest runners;
+Python 3.9 uses Ubuntu 24.04, Intel macOS 15, and Windows because its available
+builds do not cover newer Ubuntu releases or Apple Silicon runners. Tests cover custom providers, both
 credential headers, OpenCode presets, validation, redaction, backups, restore,
 and idempotency. Live authentication requires your provider account.
 

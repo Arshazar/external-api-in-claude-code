@@ -12,11 +12,11 @@ import tempfile
 from urllib.parse import urlsplit
 
 
-BASE_URLS = {
+OPENCODE_BASE_URLS = {
     "console": "https://opencode.ai/inference/anthropic",
     "go": "https://opencode.ai/inference/go/anthropic",
 }
-DEFAULT_MODELS = {
+OPENCODE_DEFAULT_MODELS = {
     "opus": "claude-opus-5-5",
     "sonnet": "claude-sonnet-5-5",
     "haiku": "claude-haiku-5-5",
@@ -53,11 +53,11 @@ def validate_base_url(value):
 
 
 def configure(data, key, provider="custom", model=None, *, base_url=None, auth="bearer", **aliases):
-    endpoint = base_url or BASE_URLS.get(provider)
+    endpoint = base_url or OPENCODE_BASE_URLS.get(provider)
     if not endpoint:
         raise ValueError("Supply --base-url (or EXTERNAL_API_BASE_URL) for a custom provider.")
     endpoint = validate_base_url(endpoint)
-    if provider == "custom" and not model and not all(aliases.get(alias) for alias in DEFAULT_MODELS):
+    if provider == "custom" and not model and not all(aliases.get(alias) for alias in OPENCODE_DEFAULT_MODELS):
         raise ValueError("Supply --model or all three model aliases for a custom provider.")
     result = copy.deepcopy(data)
     env = result.setdefault("env", {})
@@ -69,7 +69,7 @@ def configure(data, key, provider="custom", model=None, *, base_url=None, auth="
         "CLAUDE_CODE_USE_VERTEX": "",
         "CLAUDE_CODE_USE_FOUNDRY": "",
     })
-    defaults = DEFAULT_MODELS if provider == "console" else dict.fromkeys(DEFAULT_MODELS, "minimax-m3" if provider == "go" else None)
+    defaults = OPENCODE_DEFAULT_MODELS if provider == "console" else dict.fromkeys(OPENCODE_DEFAULT_MODELS, "minimax-m3" if provider == "go" else None)
     for alias, default in defaults.items():
         env["ANTHROPIC_DEFAULT_" + alias.upper() + "_MODEL"] = aliases.get(alias) or model or default
     env["ANTHROPIC_MODEL"] = model or env["ANTHROPIC_DEFAULT_SONNET_MODEL"]
@@ -109,7 +109,7 @@ def backup(path, raw):
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("-k", "--key", help="Provider credential (prefer the hidden prompt or EXTERNAL_API_KEY)")
-    result.add_argument("--base-url", help="Anthropic-compatible API base URL (or EXTERNAL_API_BASE_URL); omit /v1/messages")
+    result.add_argument("--base-url", help="Your provider's Anthropic-compatible base URL; otherwise EXTERNAL_API_BASE_URL or an interactive prompt")
     result.add_argument("--auth", choices=("bearer", "api-key"), default="bearer", help="Bearer token (default) or x-api-key header")
     result.add_argument("-m", "--model", help="Use this exact model ID for every model alias and the default")
     result.add_argument("--opus-model", dest="opus", help="Override the opus alias")
@@ -138,11 +138,20 @@ def main(argv=None):
         else:
             data = parse_settings(original) if original is not None else {}
             base_url = args.base_url or (os.environ.get("EXTERNAL_API_BASE_URL") if args.provider == "custom" else None)
+            if args.provider == "custom":
+                if not base_url and sys.stdin.isatty():
+                    base_url = input("Your API base URL (omit /v1/messages): ").strip()
+                if not base_url:
+                    raise ValueError("Supply --base-url (or EXTERNAL_API_BASE_URL) when running non-interactively.")
+                # Reject invalid endpoints before asking for a model or credential.
+                base_url = validate_base_url(base_url)
+                if not args.model and not all((args.opus, args.sonnet, args.haiku)) and sys.stdin.isatty():
+                    args.model = input("Your API model ID (used for unspecified aliases): ").strip()
             options = dict(base_url=base_url, auth=args.auth, opus=args.opus, sonnet=args.sonnet, haiku=args.haiku)
             # Validate the endpoint and model mappings before requesting credentials.
             configure({}, "", args.provider, args.model, **options)
             key = args.key if args.key is not None else os.environ.get("EXTERNAL_API_KEY")
-            if key is None and args.provider in BASE_URLS:
+            if key is None and args.provider in OPENCODE_BASE_URLS:
                 key = os.environ.get("OPENCODE_API_KEY")
             if key is None:
                 if not sys.stdin.isatty():

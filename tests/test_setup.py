@@ -35,7 +35,7 @@ class SetupTests(unittest.TestCase):
         env = json.loads(self.path.read_text())["env"]
         self.assertEqual(env["ANTHROPIC_BASE_URL"], "https://opencode.ai/inference/anthropic")
         self.assertEqual(env["ANTHROPIC_AUTH_TOKEN"], 'oc_sk_quote"\\$test')
-        self.assertEqual(env["ANTHROPIC_MODEL"], setup.DEFAULT_MODELS["sonnet"])
+        self.assertEqual(env["ANTHROPIC_MODEL"], setup.OPENCODE_DEFAULT_MODELS["sonnet"])
         self.assertNotIn("oc_sk_", out)
         if os.name != "nt":
             self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
@@ -58,7 +58,7 @@ class SetupTests(unittest.TestCase):
     def test_go_and_custom_aliases(self):
         self.assertEqual(self.run_cli("--key", "test", "--provider", "go", "--model", "minimax-m3", "--haiku-model", "claude-haiku-5-5")[0], 0)
         env = json.loads(self.path.read_text())["env"]
-        self.assertEqual(env["ANTHROPIC_BASE_URL"], setup.BASE_URLS["go"])
+        self.assertEqual(env["ANTHROPIC_BASE_URL"], setup.OPENCODE_BASE_URLS["go"])
         self.assertEqual(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "minimax-m3")
         self.assertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "claude-haiku-5-5")
         self.assertEqual(env["ANTHROPIC_SMALL_FAST_MODEL"], "claude-haiku-5-5")
@@ -167,6 +167,41 @@ class SetupTests(unittest.TestCase):
                                    "--base-url", "https://gateway.example", "--model", "custom"])
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(self.path.read_text())["env"]["ANTHROPIC_BASE_URL"], "https://gateway.example")
+
+    def test_interactive_setup_asks_for_external_url_model_and_key(self):
+        with patch.dict(os.environ, {}, clear=True), patch.object(sys.stdin, "isatty", return_value=True), \
+                patch("builtins.input", side_effect=["https://my-provider.example/api", "my-model"]) as prompt, \
+                patch.object(setup.getpass, "getpass", return_value="my-secret") as key_prompt, \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            code = setup.main(["--settings", str(self.path)])
+        self.assertEqual(code, 0)
+        self.assertEqual(prompt.call_count, 2)
+        key_prompt.assert_called_once()
+        env = json.loads(self.path.read_text())["env"]
+        self.assertEqual(env["ANTHROPIC_BASE_URL"], "https://my-provider.example/api")
+        self.assertEqual(env["ANTHROPIC_MODEL"], "my-model")
+        self.assertEqual(env["ANTHROPIC_AUTH_TOKEN"], "my-secret")
+        self.assertNotIn("my-secret", output.getvalue())
+
+    def test_explicit_custom_values_skip_all_prompts(self):
+        with patch.object(sys.stdin, "isatty", return_value=True), \
+                patch("builtins.input") as prompt, patch.object(setup.getpass, "getpass") as key_prompt:
+            code, _, err = self.run_cli("--provider", "custom", "--base-url", "https://another-provider.example",
+                                      "--model", "another-model", "--key", "another-key")
+        self.assertEqual(code, 0, err)
+        prompt.assert_not_called()
+        key_prompt.assert_not_called()
+
+    def test_invalid_interactive_url_stops_before_requesting_secrets(self):
+        with patch.dict(os.environ, {}, clear=True), patch.object(sys.stdin, "isatty", return_value=True), \
+                patch("builtins.input", return_value="invalid") as prompt, \
+                patch.object(setup.getpass, "getpass") as key_prompt, \
+                contextlib.redirect_stderr(io.StringIO()):
+            code = setup.main(["--settings", str(self.path)])
+        self.assertEqual(code, 1)
+        prompt.assert_called_once()
+        key_prompt.assert_not_called()
+        self.assertFalse(self.path.exists())
 
     def test_custom_provider_requires_url_and_complete_model_mapping(self):
         for args in (("--model", "custom"), ("--base-url", "https://gateway.example"),
